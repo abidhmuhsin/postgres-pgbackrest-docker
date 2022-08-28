@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+
+  db:
+    image: abidh99/postgres-pgbackrest
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
+    hostname: db
+    container_name: postgres-pgbackrest
+    # restart: always
+    # command: docker-entrypoint.sh postgres
+    ## BACKUP LIVE :: works on running container. not necessary to run via command itself..can run outside container
+    # command: "pgbackrest backup --stanza=pgbackrest_test_stanza_name"
+    ## RESTORE ON LIVE CONTAINER:: postmaster.pid needs to be removed before running a restore on live/used data folder. Run required commands in sequence using `bash -c`
+    # command: 
+    #     - /bin/bash
+    #     - -c
+    #     - |
+    #         rm -r /var/lib/postgresql/data/postmaster.pid
+    #         pgbackrest restore --stanza=pgbackrest_test_stanza_name --delta --log-level-console=detail
+    #         docker-entrypoint.sh postgres
+    ## RESTORE FRESH:: only works on a clean pgdata folder,- uncomment below command with appropriate stanza name(--stanza=pgbackrest_test_stanza_name) to run restore before initializing the container.
+    # command: pgbackrest restore --stanza=pgbackrest_BACKED_UP_stanza --repo1-path=/pgbackrest-test  --pg1-path=/var/lib/postgresql/data/ --delta --type=immediate --log-level-console=detail --recovery-option=recovery_target_action=promote
+    # command: su - postgres -c 'postgres  -D /var/lib/postgresql/data --config-file=/var/lib/postgresql/data/postgresql.conf'
+    environment:
+      # - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:  
+      - '5432:5432'
+    volumes: 
+        - ./postgres/_pgdata:/var/lib/postgresql/data
+      # - db:/var/lib/postgresql/data
+      # copy the sql script to startup scripts section to create tables on startup
+      # - ./sql/create_tables.sql:/docker-entrypoint-initdb.d/create_tables.sql
+      # to change the config file Postgres will use. You'd mount your custom config file with a volume:
+      #  - ./customPostgresql.conf:/etc/postgresql.conf
+    networks:
+      minio:
+         ipv4_address: 172.77.0.44
+
+  minio:
+    image: 'abidh99/minio-pgbackrest'
+    hostname: minio
+    container_name: s3-minio-pgbackrest
+    build:
+      context: ./minio
+      dockerfile: Dockerfile
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - ./minio/_s3data/:/data
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    networks:
+        minio:
+         ipv4_address: 172.77.0.45
+
+
+volumes:
+  db:
+    driver: local
+
+networks: 
+  minio:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.77.0.0/24
